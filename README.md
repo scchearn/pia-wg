@@ -6,6 +6,8 @@ A simple command-line tool for connecting to [Private Internet Access](https://w
 
 The official PIA app works, but it runs a background daemon, manages its own network interfaces, and can conflict with how the rest of your system handles networking. This tool does the same job by talking directly to PIA's API and handing the connection off to NetworkManager, which is already managing your network.
 
+This project is based on the API flow from [pia-foss/manual-connections](https://github.com/pia-foss/manual-connections) — the official PIA scripts that use `wg-quick`. `pia-wg` takes the same approach but integrates with NetworkManager instead.
+
 ## Requirements
 
 - Linux with NetworkManager
