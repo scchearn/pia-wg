@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pia-connect — PIA VPN connection manager via NetworkManager
+# pia-wg — PIA VPN connection manager via NetworkManager
 #
 # Manages PIA WireGuard connections through NetworkManager. Each connect
 # generates a fresh ephemeral key pair, registers it with PIA's API, and
@@ -10,9 +10,11 @@
 #   PIA_PASS=yourpassword
 #   PREFERRED_REGION=pt     # optional default region
 #
-# See: pia-connect --help
+# See: pia-wg --help
 
 set -euo pipefail
+
+VERSION="0.1.0"
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 NM_CONNECTION="pia"
@@ -92,9 +94,13 @@ stop_port_forward() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --version|-V)
+      echo "pia-wg $VERSION"
+      exit 0
+      ;;
     --help|-h)
       cat <<EOF
-${_bold}Usage:${_reset} pia-connect [OPTIONS]
+${_bold}Usage:${_reset} pia-wg [OPTIONS]
 
 PIA VPN connection manager via NetworkManager WireGuard.
 
@@ -116,6 +122,7 @@ ${_bold}Information:${_reset}
 ${_bold}Control:${_reset}
       ${_cyan}--down${_reset}            Disconnect VPN (and stop port forwarding)
   ${_cyan}-h, --help${_reset}            Show this help
+  ${_cyan}-V, --version${_reset}         Show version
 
 ${_bold}Credentials:${_reset} /etc/pia/credentials ${_dim}(root:root, mode 600)${_reset}
   PIA_USER=p1234567
@@ -127,12 +134,12 @@ ${_bold}Environment:${_reset}
   NO_COLOR      Disable colored output when set
 
 ${_bold}Examples:${_reset}
-  sudo pia-connect --region pt
-  sudo pia-connect --auto
-  sudo pia-connect --region us_chicago --port-forward
-  sudo pia-connect --dip DIP1a2b3c4d...
-  sudo pia-connect --latency --pf
-  sudo pia-connect --down
+  sudo pia-wg --region pt
+  sudo pia-wg --auto
+  sudo pia-wg --region us_chicago --port-forward
+  sudo pia-wg --dip DIP1a2b3c4d...
+  sudo pia-wg --latency --pf
+  sudo pia-wg --down
 EOF
       exit 0
       ;;
@@ -212,7 +219,7 @@ EOF
       PORT_FORWARD=true
       ;;
     *)
-      die "Unknown flag: $1. Run 'pia-connect --help' for usage."
+      die "Unknown flag: $1. Run 'pia-wg --help' for usage."
       ;;
   esac
   shift
@@ -320,21 +327,21 @@ else
       | sort -t$'\t' -k1 -n \
       | head -1 \
       | cut -f2)
-    [[ -n "$REGION" ]] || die "No regions responded within ${MAX_LATENCY}s. Try: MAX_LATENCY=1 sudo pia-connect --auto"
+    [[ -n "$REGION" ]] || die "No regions responded within ${MAX_LATENCY}s. Try: MAX_LATENCY=1 sudo pia-wg --auto"
     ok "Selected region: ${_bold}${REGION}${_reset}"
   fi
 
   [[ -n "$REGION" ]] || die "No region set. Use --region <id>, --auto, --dip, or set PREFERRED_REGION in $CREDS_FILE."
 
   regionData=$(echo "$serverlist" | jq --arg r "$REGION" '.regions[] | select(.id==$r)')
-  [[ -n "$regionData" ]] || die "Region '${REGION}' not found. Run 'pia-connect --list' for valid IDs."
+  [[ -n "$regionData" ]] || die "Region '${REGION}' not found. Run 'pia-wg --list' for valid IDs."
 
   # Warn if port forwarding requested but region doesn't support it
   if [[ "$PORT_FORWARD" == true ]]; then
     pf_capable=$(echo "$regionData" | jq -r '.port_forward')
     if [[ "$pf_capable" != "true" ]]; then
       warn "Region '${REGION}' does not support port forwarding."
-      warn "Run 'pia-connect --list --pf' to see compatible regions."
+      warn "Run 'pia-wg --list --pf' to see compatible regions."
       PORT_FORWARD=false
     fi
   fi
