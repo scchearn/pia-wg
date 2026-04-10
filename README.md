@@ -33,9 +33,9 @@ sudo apt install wireguard-tools curl jq
 ```sh
 sudo mkdir -p /usr/local/lib/pia
 sudo curl -o /usr/local/lib/pia/pia-wg.sh \
-  https://raw.githubusercontent.com/scchearn/pia-wg/main/pia-wg.sh
+  https://github.com/scchearn/pia-wg/releases/latest/download/pia-wg.sh
 sudo curl -o /usr/local/lib/pia/ca.rsa.4096.crt \
-  https://raw.githubusercontent.com/scchearn/pia-wg/main/ca.rsa.4096.crt
+  https://github.com/scchearn/pia-wg/releases/latest/download/ca.rsa.4096.crt
 sudo chmod +x /usr/local/lib/pia/pia-wg.sh
 sudo ln -sf /usr/local/lib/pia/pia-wg.sh /usr/local/bin/pia-wg
 ```
