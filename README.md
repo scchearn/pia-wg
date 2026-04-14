@@ -144,14 +144,34 @@ The key pair is ephemeral — a new one is generated on every connect. This is h
 
 ## IPv6
 
-PIA's WireGuard implementation does not support IPv6. If IPv6 is enabled on your system, `pia-wg` will warn you at connect time, as IPv6 traffic could bypass the VPN tunnel. To disable it:
+PIA's WireGuard doesn't carry IPv6 traffic. If IPv6 stays active on your system while the VPN is connected, those requests go out unencrypted through your regular internet connection — bypassing the tunnel entirely.
+
+To prevent this, `pia-wg` **disables IPv6 system-wide by default** when you connect, and restores it automatically when you disconnect with `--down`.
+
+### Keeping IPv6 enabled
+
+If you want to manage IPv6 yourself, or you know your network doesn't use it and don't want `pia-wg` to touch it, pass `--ipv6`:
 
 ```sh
-sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1
-sudo sysctl -w net.ipv6.conf.default.disable_ipv6=1
+sudo pia-wg --region pt --ipv6
 ```
 
-To make it permanent, add those lines to `/etc/sysctl.d/99-disable-ipv6.conf`.
+You'll get a warning if IPv6 is active, but the tool won't change any system settings.
+
+To make this permanent, add the following to `/etc/pia/credentials`:
+
+```
+DISABLE_IPV6=false
+```
+
+### Making IPv6 disabled permanently
+
+`pia-wg` only disables IPv6 for the duration of the VPN session — it restores it on disconnect. If you want it off all the time regardless of the VPN, add this to `/etc/sysctl.d/99-disable-ipv6.conf`:
+
+```
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+```
 
 ## License
 

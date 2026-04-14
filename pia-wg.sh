@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 NM_CONNECTION="pia"
@@ -30,6 +30,7 @@ AUTO=false
 DIP_TOKEN=""
 PORT_FORWARD=false
 PF_ONLY=false
+DISABLE_IPV6=true
 
 # ── output ────────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ ${_bold}Connection options:${_reset}
 ${_bold}Features:${_reset}
       ${_cyan}--port-forward${_reset}    Enable port forwarding after connecting
       ${_cyan}--pf-status${_reset}       Show current port forwarding status
+      ${_cyan}--ipv6${_reset}            Keep IPv6 enabled (by default it is disabled to prevent leaks)
 
 ${_bold}Information:${_reset}
       ${_cyan}--list${_reset}            List all available regions
@@ -149,6 +151,12 @@ EOF
       nmcli connection down "$NM_CONNECTION" 2>/dev/null \
         && ok "Disconnected" \
         || warn "Not connected"
+      if [[ -f "$PF_STATE_DIR/ipv6_disabled" ]]; then
+        sysctl -w net.ipv6.conf.all.disable_ipv6=0 >/dev/null
+        sysctl -w net.ipv6.conf.default.disable_ipv6=0 >/dev/null
+        rm -f "$PF_STATE_DIR/ipv6_disabled"
+        ok "IPv6 re-enabled"
+      fi
       exit 0
       ;;
     --pf-status)
@@ -218,6 +226,9 @@ EOF
     --port-forward|--pf)
       PORT_FORWARD=true
       ;;
+    --ipv6)
+      _IPV6_FLAG=true
+      ;;
     *)
       die "Unknown flag: $1. Run 'pia-wg --help' for usage."
       ;;
@@ -251,14 +262,24 @@ fi
 # Flag takes precedence; fall back to credentials file, then env var
 [[ -n "$REGION" ]] || REGION="${PREFERRED_REGION:-}"
 
-# ── ipv6 leak check ───────────────────────────────────────────────────────────
+# --ipv6 flag overrides credentials file; credentials file overrides default
+[[ "${_IPV6_FLAG:-false}" == true ]] && DISABLE_IPV6=false
+DISABLE_IPV6="${DISABLE_IPV6:-true}"
 
-if [[ -f /proc/net/if_inet6 ]]; then
-  ipv6_all=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null || echo 0)
-  ipv6_def=$(sysctl -n net.ipv6.conf.default.disable_ipv6 2>/dev/null || echo 0)
-  if [[ "$ipv6_all" -ne 1 || "$ipv6_def" -ne 1 ]]; then
-    warn "IPv6 is enabled. PIA WireGuard does not support IPv6 — traffic may leak."
-    warn "To disable: sysctl -w net.ipv6.conf.all.disable_ipv6=1"
+# ── ipv6 ──────────────────────────────────────────────────────────────────────
+
+mkdir -p "$PF_STATE_DIR"
+if [[ "$DISABLE_IPV6" == true ]]; then
+  sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null
+  sysctl -w net.ipv6.conf.default.disable_ipv6=1 >/dev/null
+  touch "$PF_STATE_DIR/ipv6_disabled"
+  ok "IPv6 disabled (use --ipv6 to keep it enabled)"
+else
+  if [[ -f /proc/net/if_inet6 ]]; then
+    ipv6_all=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null || echo 0)
+    if [[ "$ipv6_all" -ne 1 ]]; then
+      warn "IPv6 is enabled — traffic may leak outside the VPN tunnel."
+    fi
   fi
 fi
 
@@ -409,7 +430,8 @@ nmcli connection delete "$NM_CONNECTION" &>/dev/null || true
 nmcli connection import type wireguard file "$CONF_FILE" >/dev/null
 nmcli connection modify "$NM_CONNECTION" \
   wireguard.ip4-auto-default-route yes \
-  connection.autoconnect no
+  connection.autoconnect no \
+  ipv6.method ignore
 
 detail "Bringing up connection..."
 nmcli connection up "$NM_CONNECTION" >/dev/null
