@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 NM_CONNECTION="pia"
@@ -116,6 +116,7 @@ ${_bold}Features:${_reset}
       ${_cyan}--ipv6${_reset}            Keep IPv6 enabled (by default it is disabled to prevent leaks)
 
 ${_bold}Information:${_reset}
+      ${_cyan}--status${_reset}          Show connection status (IP, region, port fwd, token)
       ${_cyan}--list${_reset}            List all available regions
       ${_cyan}--list --pf${_reset}       List only port-forwarding capable regions
       ${_cyan}--latency${_reset}         List regions sorted by latency
@@ -157,6 +158,66 @@ EOF
         rm -f "$PF_STATE_DIR/ipv6_disabled"
         ok "IPv6 re-enabled"
       fi
+      rm -f "$PF_STATE_DIR/region" "$PF_STATE_DIR/hostname"
+      exit 0
+      ;;
+    --status)
+      echo
+      if ! nmcli -t -f NAME connection show --active 2>/dev/null | grep -qx "$NM_CONNECTION"; then
+        printf "  %-14s %s\n" "Status:" "${_red}disconnected${_reset}"
+        echo
+        exit 0
+      fi
+
+      tunnel_ip=$(nmcli -t -f IP4.ADDRESS connection show "$NM_CONNECTION" 2>/dev/null \
+        | head -1 | sed 's/[^:]*://' | cut -d/ -f1)
+      dns=$(nmcli -t -f IP4.DNS connection show "$NM_CONNECTION" 2>/dev/null \
+        | head -1 | sed 's/[^:]*://')
+      region=$(cat "$PF_STATE_DIR/region" 2>/dev/null || echo "unknown")
+      hostname_saved=$(cat "$PF_STATE_DIR/hostname" 2>/dev/null || echo "")
+      public_ip=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null || echo "unavailable")
+
+      token_info="unknown"
+      if [[ -f "$TOKEN_FILE" ]]; then
+        token_remaining_secs=$(( 86400 - ($(date +%s) - $(stat -c %Y "$TOKEN_FILE")) ))
+        if (( token_remaining_secs > 3600 )); then
+          token_info="${_green}valid${_reset} — $(( token_remaining_secs / 3600 ))h remaining"
+        elif (( token_remaining_secs > 0 )); then
+          token_info="${_yellow}expiring soon${_reset} — $(( token_remaining_secs / 60 ))m remaining"
+        else
+          token_info="${_red}expired${_reset}"
+        fi
+      fi
+
+      if [[ -f "$PF_STATE_DIR/ipv6_disabled" ]]; then
+        ipv6_info="${_dim}disabled${_reset}"
+      else
+        ipv6_info="${_yellow}enabled${_reset} ${_dim}(may leak)${_reset}"
+      fi
+
+      pf_info="${_dim}not active${_reset}"
+      if [[ -f "$PF_STATE_DIR/pf.pid" ]] && kill -0 "$(cat "$PF_STATE_DIR/pf.pid")" 2>/dev/null; then
+        pf_port=$(cat "$PF_STATE_DIR/pf.port" 2>/dev/null || echo "unknown")
+        pf_pid=$(cat "$PF_STATE_DIR/pf.pid")
+        pf_expires=""
+        if [[ -f "$PF_STATE_DIR/pf.payload" ]]; then
+          pf_expires=$(jq -r '.payload' < "$PF_STATE_DIR/pf.payload" 2>/dev/null \
+            | base64 -d 2>/dev/null | jq -r '.expires_at' 2>/dev/null || true)
+        fi
+        pf_info="port ${_bold}${pf_port}${_reset}${pf_expires:+  ${_dim}expires ${pf_expires}${_reset}}  ${_dim}PID ${pf_pid}${_reset}"
+      fi
+
+      printf "  %-14s %s\n" "Status:" "${_green}connected${_reset}"
+      printf "  %-14s %s\n" "Region:" "${_bold}${region}${_reset}${hostname_saved:+  ${_dim}${hostname_saved}${_reset}}"
+      echo
+      printf "  %-14s %s\n" "Tunnel IP:" "${tunnel_ip}"
+      printf "  %-14s %s\n" "Public IP:" "${_bold}${public_ip}${_reset}"
+      printf "  %-14s %s\n" "DNS:" "${dns}"
+      echo
+      printf "  %-14s %s\n" "Port fwd:" "${pf_info}"
+      printf "  %-14s %s\n" "Token:" "${token_info}"
+      printf "  %-14s %s\n" "IPv6:" "${ipv6_info}"
+      echo
       exit 0
       ;;
     --pf-status)
@@ -435,6 +496,9 @@ nmcli connection modify "$NM_CONNECTION" \
 
 detail "Bringing up connection..."
 nmcli connection up "$NM_CONNECTION" >/dev/null
+
+echo "${REGION:-DIP}" > "$PF_STATE_DIR/region"
+echo "$WG_HOSTNAME" > "$PF_STATE_DIR/hostname"
 
 public_ip=$(curl -s --max-time 10 https://ifconfig.me)
 
